@@ -129,7 +129,7 @@ def EQ(
 	input : vs.VideoNode,
 	hue : typing.Optional[float] = None,
 	sat : typing.Optional[float] = None,
-	bright : typing.Optional[float] = None,
+	bri : typing.Optional[float] = None,
 	cont : typing.Optional[float] = None,
 	coring : bool = True,
 ) -> vs.VideoNode :
@@ -163,8 +163,8 @@ def EQ(
 
 		clip = core.std.ShufflePlanes(clips=[clip, dst_u, dst_v], planes=[0, 0, 0], colorfamily=fmt_cf_in)
 
-	if bright is not None or cont is not None :
-		bright = 0.0 if bright is None else bright
+	if bri is not None or cont is not None :
+		bri = 0.0 if bri is None else bri
 		cont = 1.0 if cont is None else cont
 		luma_lut = []
 		luma_min = 0
@@ -173,7 +173,7 @@ def EQ(
 			luma_min = 16 << (fmt_bit_in - 8)
 			luma_max = 235 << (fmt_bit_in - 8)
 		for i in range(2 ** fmt_bit_in) :
-			val = int((i - luma_min) * cont + bright + luma_min + 0.5)
+			val = int((i - luma_min) * cont + bri + luma_min + 0.5)
 			luma_lut.append(min(max(val, luma_min), luma_max))
 
 		clip = core.std.Lut(clip=clip, planes=0, lut=luma_lut)
