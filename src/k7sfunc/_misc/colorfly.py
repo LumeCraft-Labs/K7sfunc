@@ -8,7 +8,7 @@ import math
 
 __all__ = [
 	"PEQ",
-	"_SAT", "_HUE", "_CONT", "_BRI", "_TEMP", "_GAMMA"
+	"PEQ_SAT", "PEQ_HUE", "PEQ_CONT", "PEQ_BRI", "PEQ_TEMP", "PEQ_GAMMA"
 ]
 
 
@@ -366,7 +366,7 @@ def _from_float_native(clip, orig_format):
 
 # ==============================================================================
 
-def _BRI(
+def PEQ_BRI(
 	clip,
 	brightness=0.0,
 	matrix=None,
@@ -404,7 +404,7 @@ def _BRI(
 		return _Expr(clip, [expr, "", ""])
 	return _Expr(clip, [expr] * fmt.num_planes)
 
-def _CONT(
+def PEQ_CONT(
 	clip,
 	contrast=1.0,
 	matrix=None,
@@ -454,7 +454,7 @@ def _CONT(
 			expr_y += " 0 max 1 min"
 	return _Expr(clip, [expr_y] * fmt.num_planes)
 
-def _SAT(
+def PEQ_SAT(
 	clip,
 	saturation=1.0,
 	matrix=None,
@@ -504,7 +504,7 @@ def _SAT(
 			expr_c += " -0.5 max 0.5 min"
 	return _Expr(clip, ["", expr_c, expr_c])
 
-def _HUE(
+def PEQ_HUE(
 	clip,
 	hue=0.0,
 	matrix=None,
@@ -576,7 +576,7 @@ def _HUE(
 	new_v = _Expr([u, v], expr_v)
 	return core.std.ShufflePlanes([clip, new_u, new_v], planes=[0, 0, 0], colorfamily=fmt.color_family)
 
-def _GAMMA(
+def PEQ_GAMMA(
 	clip,
 	gamma=1.0,
 	matrix=None,
@@ -634,7 +634,7 @@ def _GAMMA(
 
 	return _restore_format(work, orig_format, matrix, range_val)
 
-def _TEMP(clip, temperature=6500, matrix=None, clamp=False):
+def PEQ_TEMP(clip, temperature=6500, matrix=None, clamp=False):
 	"""色温调整 (Color Temperature)。
 
 	- 任意输入格式(YUV / RGB / GRAY)均自动转 RGBH 处理后转回。
