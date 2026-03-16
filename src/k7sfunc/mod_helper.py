@@ -82,8 +82,9 @@ def FMT2YUV_SP(
 def DCF(
 	input : vs.VideoNode,
 	ref : vs.VideoNode,
-	rad : int = 10,
-	bp : int = 5,
+	rad : int = 5,
+	bp : int = 4,
+	fast : bool = True,
 ) -> vs.VideoNode :
 
 	func_name = "DCF"
@@ -92,25 +93,30 @@ def DCF(
 
 	fmt_in = input.format.id
 	fmt_ref = ref.format.id
-	# 仅考虑输入为RGBH或RGBS的情况
-	if fmt_in != vs.RGBS :
-		input = core.resize.Point(clip=input, format=vs.RGBS)
-	if fmt_ref != vs.RGBS :
-		ref = core.resize.Point(clip=ref, format=vs.RGBS)
-
 	w_in, h_in = input.width, input.height
 	w_ref, h_ref = ref.width, ref.height
-	if w_ref != w_in or h_ref != h_in :
-		ref = core.resize.Bilinear(clip=ref, width=w_in, height=h_in)
+
+	# 仅考虑输入为RGBH或RGBS的情况
+	clip = core.resize.Point(clip=input, format=vs.RGBS) if fmt_in != vs.RGBS else input
+	ref = core.resize.Point(clip=ref, format=vs.RGBS) if fmt_ref != vs.RGBS else ref
+	clip_orig = clip
+	need_resize = w_ref != w_in or h_ref != h_in
+
+	if need_resize :
+		if fast :
+			clip = core.resize.Bilinear(clip=clip, width=w_ref, height=h_ref)
+		else :
+			ref = core.resize.Bilinear(clip=ref, width=w_in, height=h_in)
 
 	planes = [0, 1, 2]
-	blur_in = core.vszip.BoxBlur(clip=input, planes=planes,
-		hradius=rad, hpasses=bp, vradius=rad, vpasses=bp)
-	blur_ref = core.vszip.BoxBlur(clip=ref, planes=planes,
-		hradius=rad, hpasses=bp, vradius=rad, vpasses=bp)
+	blur_in = core.vszip.BoxBlur(clip=clip, planes=planes, hradius=rad, hpasses=bp, vradius=rad, vpasses=bp)
+	blur_ref = core.vszip.BoxBlur(clip=ref, planes=planes, hradius=rad, hpasses=bp, vradius=rad, vpasses=bp)
 
 	diff = core.std.MakeDiff(clipa=blur_ref, clipb=blur_in, planes=planes)
-	output = core.std.MergeDiff(clipa=input, clipb=diff, planes=planes)
+	if fast and need_resize :
+		diff = core.resize.Bilinear(clip=diff, width=w_in, height=h_in)
+
+	output = core.std.MergeDiff(clipa=clip_orig if fast else clip, clipb=diff, planes=planes)
 
 	return output
 
