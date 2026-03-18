@@ -815,24 +815,21 @@ UV色度偏移修正。
 
 ### DEBAND_STD
 
-> 所需依赖：[Neo_f3kdb](https://vsdb.top/plugins/neo_f3kdb)
+> 所需依赖：[vszip](https://github.com/dnjulek/vapoursynth-zip)
 
 ```python
-DEBAND_STD(input=?, bd_range=15, bdy_rth=48, bdc_rth=48, grainy=48, grainc=48, spl_m=4, grain_dy=True, depth=8)
+DEBAND_STD(input=?, bd_range=15, bdy_rth=48.0, grainy=48.0, spl_m=4, grain_dy=True)
 ```
 
-用f3kdb算法去色带。
+用f3kdb算法去色带，仅处理Y平面。
 
 ||||
 |:---|:---|:---|
 | <kbd>bd_range</kbd> | 整数 | 色带检测范围 |
-| <kbd>bdy_rth</kbd> | 整数 | 色带检测阈值 —— Y平面 |
-| <kbd>bdc_rth</kbd> | 整数 | 色带检测阈值 —— CbCr平面 |
-| <kbd>grainy</kbd> | 整数 | 最后阶段添加的颗粒数 —— Y平面 |
-| <kbd>grainc</kbd> | 整数 | 最后阶段添加的颗粒数 —— CbCr平面 |
+| <kbd>bdy_rth</kbd> | 浮点 | 色带检测阈值 —— Y平面，范围 `0.0~255.0` |
+| <kbd>grainy</kbd> | 浮点 | 最后阶段添加的颗粒数 —— Y平面，范围 `0.0~255.0` |
 | <kbd>spl_m</kbd> | `1`\|`2`\|`3`\|`4` | 采样模式，分别对应 Column Square Row Average(Column&Row) |
 | <kbd>grain_dy</kbd> | `True`\|`False` | 是否使用动态颗粒 |
-| <kbd>depth</kbd> | `8`\|`10` | 最终输出的色深 |
 
 ***
 

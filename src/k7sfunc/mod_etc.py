@@ -106,39 +106,34 @@ def CSC_UV(
 def DEBAND_STD(
 	input : vs.VideoNode,
 	bd_range : int = 15,
-	bdy_rth : int = 48,
-	bdc_rth : int = 48,
-	grainy : int = 48,
-	grainc : int = 48,
+	bdy_rth : float = 48.0,
+	grainy : float = 48.0,
 	spl_m : typing.Literal[1, 2, 3, 4] = 4,
 	grain_dy : bool = True,
-	depth : typing.Literal[8, 10] = 8,
 ) -> vs.VideoNode :
 
 	func_name = "DEBAND_STD"
 	_validate_input_clip(func_name, input)
 	_validate_numeric(func_name, "bd_range", bd_range, min_val=1, int_only=True)
-	_validate_numeric(func_name, "bdy_rth", bdy_rth, min_val=1, int_only=True)
-	_validate_numeric(func_name, "bdc_rth", bdc_rth, min_val=1, int_only=True)
-	_validate_numeric(func_name, "grainy", grainy, min_val=1, int_only=True)
-	_validate_numeric(func_name, "grainc", grainc, min_val=1, int_only=True)
+	_validate_numeric(func_name, "bdy_rth", bdy_rth, min_val=0.0)
+	_validate_numeric(func_name, "grainy", grainy, min_val=0.0)
 	_validate_literal(func_name, "spl_m", spl_m, [1, 2, 3, 4])
 	_validate_bool(func_name, "grain_dy", grain_dy)
-	_validate_literal(func_name, "depth", depth, [8, 10])
 
-	_check_plugin(func_name, "neo_f3kdb")
+	_check_plugin(func_name, "vszip")
 
-	fmt_in = input.format.id
 	color_lv = getattr(input.get_frame(0).props, "_ColorRange", 0)
 
-	if fmt_in == vs.YUV444P16 :
-		cut0 = input
-	else :
-		cut0 = core.resize.Bilinear(clip=input, format=vs.YUV444P16)
-	output = core.neo_f3kdb.Deband(clip=cut0, range=bd_range, y=bdy_rth,
-		cb=bdc_rth, cr=bdc_rth, grainy=grainy, grainc=grainc, sample_mode=spl_m,
-		dynamic_grain=grain_dy, mt=True, keep_tv_range=True if color_lv==1 else False,
-		output_depth=depth)
+	thr = bdy_rth
+	grain = grainy
+	peak14 = float((1 << 14) - 1)
+	peak16 = float((1 << 16) - 1)
+	thr255 = thr * 255 / peak14 # use peak16 here if scale=True in neo_f3kdb
+	grain255 = grain * 255 / peak14 # scale=True does not affect grain
+
+	output = core.vszip.Deband(clip=input, range=bd_range, thr=[thr255, 0, 0],
+							   grain=[grain255, 0], sample_mode=spl_m, dynamic_grain=grain_dy,
+							   keep_tv_range=True if color_lv==1 else False)
 
 	return output
 
