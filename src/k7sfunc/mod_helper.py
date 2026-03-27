@@ -23,6 +23,7 @@ __all__ = [
 	"PLANE_EXTR",
 	"RANGE_CHANGE",
 	"ONNX_ANZ",
+	"GEN_TCLIPS",
 	"PIX_CLP",
 	"SCENE_DETECT",
 	"SCDetect2",
@@ -302,11 +303,13 @@ def ONNX_ANZ(
 	"""解析ONNX模型信息
 	Args:
 		loose:
-			0 - 严格模式：维度必须为 [-1/1, 1/3, -1, -1] + 结构检查
-			1 - 标准模式：维度必须为 [-1/1, 1/3, -1, -1]
-			2 - 宽松模式：允许静态维度，但通道数必须为 1 或 3
+			0 - 严格模式：维度必须为 [-1/1, C, -1, -1] + 结构检查
+			1 - 标准模式：维度必须为 [-1/1, C, -1, -1]
+			2 - 宽松模式：允许静态维度
 	Returns:
-		dict: 包含 valid, elem_type, elem_type_name, shape, error
+		dict: 包含 valid, elem_type, elem_type_name, weight_dtype, shape, out_shape, num_frames, error
+			weight_dtype: 权重精度 ("fp16"/"fp32"/"mixed"/None)，用于识别fp32 I/O包裹fp16内核的模型
+			num_frames: 输入帧数 (1=单帧, 3/5/7=多帧)
 	"""
 
 	func_name = "ONNX_ANZ"
@@ -317,7 +320,10 @@ def ONNX_ANZ(
 		"valid": False,
 		"elem_type": None,
 		"elem_type_name": None,
+		"weight_dtype": None,
 		"shape": None,
+		"out_shape": None,
+		"num_frames": None,
 		"error": None,
 	}
 
@@ -357,14 +363,52 @@ def ONNX_ANZ(
 				shape.append(dim.dim_value if dim.dim_value > 0 else -1)
 		result["shape"] = shape
 
+		## 检测权重精度（识别fp32 I/O包裹fp16内核的模型）
+		if model.graph.initializer :
+			weight_types = set(init.data_type for init in model.graph.initializer)
+			if weight_types == {TensorProto.FLOAT16} :
+				result["weight_dtype"] = "fp16"
+			elif weight_types == {TensorProto.FLOAT} :
+				result["weight_dtype"] = "fp32"
+			else :
+				result["weight_dtype"] = "mixed"
+
+		## 解析输出张量形状
+		output_info = model.graph.output[0]
+		out_tensor_type = output_info.type.tensor_type
+		out_shape = []
+		for dim in out_tensor_type.shape.dim :
+			if dim.dim_param :
+				out_shape.append(-1)
+			else :
+				out_shape.append(dim.dim_value if dim.dim_value > 0 else -1)
+		result["out_shape"] = out_shape
+
 		## NCHW
 		if len(shape) != 4 :
 			result["error"] = f"输入维度数量错误: 期望 4 维 (NCHW)，实际 {len(shape)} 维"
 			return result
 
-		if shape[1] not in [1, 3] :
-			result["error"] = f"输入通道数错误: 期望 1 或 3 通道，实际 {shape[1]} 通道"
+		if len(out_shape) != 4 :
+			result["error"] = f"输出维度数量错误: 期望 4 维 (NCHW)，实际 {len(out_shape)} 维"
 			return result
+
+		## 基础通道数由输出决定（1=灰度, 3=RGB）
+		base_ch = out_shape[1]
+		if base_ch not in [1, 3] :
+			result["error"] = f"输出通道数错误: 期望 1 或 3 通道，实际 {base_ch} 通道"
+			return result
+
+		## 输入通道数必须为基础通道数的整数倍（多帧模型: N*base_ch）
+		if shape[1] < 1 or shape[1] % base_ch != 0 :
+			result["error"] = f"输入通道数错误: 期望 {base_ch} 的整数倍，实际 {shape[1]} 通道"
+			return result
+
+		num_frames = shape[1] // base_ch
+		if num_frames > 1 and num_frames % 2 == 0 :
+			result["error"] = f"多帧模型的帧数必须为奇数（对称时域窗口），实际 {num_frames} 帧"
+			return result
+		result["num_frames"] = num_frames
 
 		if loose in [0, 1] :
 			if shape[0] not in [-1, 1] or shape[2] != -1 or shape[3] != -1 :
@@ -378,6 +422,36 @@ def ONNX_ANZ(
 		result["error"] = f"解析模型失败: {e}"
 
 	return result
+
+##################################################
+## 时域邻帧生成
+##################################################
+
+def GEN_TCLIPS(
+	input : vs.VideoNode,
+	num_frames : int = 1,
+) -> list :
+	"""生成以当前帧为中心的时域邻帧 clips 列表
+	边界帧使用复制填充
+	"""
+
+	clip = input
+	if num_frames == 1 :
+		return [clip]
+
+	radius = num_frames // 2
+	n = clip.num_frames
+	clips = []
+	for offset in range(-radius, radius + 1) :
+		if offset < 0 :
+			k = -offset
+			clips.append(clip[0] * k + clip[:n - k])
+		elif offset > 0 :
+			clips.append(clip[offset:] + clip[-1] * offset)
+		else :
+			clips.append(clip)
+
+	return clips
 
 ##################################################
 ## 像素值限制

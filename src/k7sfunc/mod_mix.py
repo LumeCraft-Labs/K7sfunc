@@ -18,6 +18,7 @@ from ._internal import (
 from .mod_helper import (
 	ONNX_ANZ,
 	DCF,
+	GEN_TCLIPS,
 )
 
 __all__ = [
@@ -66,7 +67,8 @@ def UAI_ORT_HUB(
 	fp16_mdl = mdl_info["elem_type_name"] == "fp16"
 	if fp16_mdl :
 		fp16_qnt = False ## ort对于fp16模型自动使用对应的IO
-	gray_mdl = mdl_info["shape"][1] == 1
+	gray_mdl = mdl_info["out_shape"][1] == 1
+	num_frames = mdl_info["num_frames"]
 	gray_fmt = vs.GRAYH if fp16_mdl else vs.GRAYS
 	rgb_fmt = vs.RGBH if fp16_mdl else vs.RGBS
 	yuv_fmt = vs.YUV444PH if fp16_mdl else vs.YUV444PS
@@ -74,14 +76,16 @@ def UAI_ORT_HUB(
 	if gray_mdl :
 		clip_y = core.resize.Point(clip=input, format=gray_fmt)
 		be_param = backend_param(fp16_qnt)
-		infer = vsmlrt.inference(clips=clip_y, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip_y, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		clip_uv = core.resize.Bilinear(clip=input, format=yuv_fmt)
 		output = core.std.ShufflePlanes([infer, clip_uv], [0, 1, 2], vs.YUV)
 		output = core.resize.Bilinear(clip=output, format=fmt_in, range=1 if colorlv==0 else None)
 	else :
 		clip = core.resize.Bilinear(clip=input, format=rgb_fmt, matrix_in_s="709")
 		be_param = backend_param(fp16_qnt)
-		infer = vsmlrt.inference(clips=clip, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		if crc :
 			infer = DCF(input=infer, ref=clip)
 		output = core.resize.Bilinear(clip=infer, format=fmt_in, matrix_s="709", range=1 if colorlv==0 else None)
@@ -195,7 +199,8 @@ def UAI_MIGX(
 	fp16_mdl = mdl_info["elem_type_name"] == "fp16"
 	if fp16_mdl :
 		fp16_qnt = True   ### 量化精度与模型精度匹配
-	gray_mdl = mdl_info["shape"][1] == 1
+	gray_mdl = mdl_info["out_shape"][1] == 1
+	num_frames = mdl_info["num_frames"]
 	gray_fmt = vs.GRAYH if fp16_qnt else vs.GRAYS
 	rgb_fmt = vs.RGBH if fp16_qnt else vs.RGBS
 	yuv_fmt = vs.YUV444PH if fp16_qnt else vs.YUV444PS
@@ -205,7 +210,8 @@ def UAI_MIGX(
 		be_param = vsmlrt.BackendV2.MIGX(
 			fp16=fp16_qnt, exhaustive_tune=exh_tune, opt_shapes=[clip_y.width, clip_y.height],
 			device_id=gpu, num_streams=gpu_t, short_path=True)
-		infer = vsmlrt.inference(clips=clip_y, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip_y, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		clip_uv = core.resize.Bilinear(clip=input, format=yuv_fmt)
 		output = core.std.ShufflePlanes([infer, clip_uv], [0, 1, 2], vs.YUV)
 		output = core.resize.Bilinear(clip=output, format=fmt_in, range=1 if colorlv==0 else None)
@@ -214,7 +220,8 @@ def UAI_MIGX(
 		be_param = vsmlrt.BackendV2.MIGX(
 			fp16=fp16_qnt, exhaustive_tune=exh_tune, opt_shapes=[clip.width, clip.height],
 			device_id=gpu, num_streams=gpu_t, short_path=True)
-		infer = vsmlrt.inference(clips=clip, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		if crc :
 			infer = DCF(input=infer, ref=clip)
 		output = core.resize.Bilinear(clip=infer, format=fmt_in, matrix_s="709", range=1 if colorlv==0 else None)
@@ -279,10 +286,11 @@ def UAI_NV_TRT(
 	mdl_info = ONNX_ANZ(input=mdl_pth)
 	if not mdl_info["valid"] :
 		raise vs.Error(f"模块 {func_name} 的输入模型无效: {mdl_info['error']}")
-	fp16_mdl = mdl_info["elem_type_name"] == "fp16"
+	fp16_mdl = mdl_info["elem_type_name"] == "fp16" or mdl_info["weight_dtype"] in ["fp16", "mixed"]
 	if fp16_mdl :
 		fp16_qnt = True   ### 量化精度与模型精度匹配
-	gray_mdl = mdl_info["shape"][1] == 1
+	gray_mdl = mdl_info["out_shape"][1] == 1
+	num_frames = mdl_info["num_frames"]
 
 	nv1, nv2, nv3 = [bool(num) for num in cuda_opt]
 	if int8_qnt :
@@ -302,13 +310,15 @@ def UAI_NV_TRT(
 
 	if gray_mdl :
 		clip_y = core.resize.Point(clip=input, format=gray_fmt)
-		infer = vsmlrt.inference(clips=clip_y, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip_y, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		clip_uv = core.resize.Bilinear(clip=input, format=yuv_fmt)
 		output = core.std.ShufflePlanes([infer, clip_uv], [0, 1, 2], vs.YUV)
 		output = core.resize.Bilinear(clip=output, format=fmt_in, range=1 if colorlv==0 else None)
 	else :
 		clip = core.resize.Bilinear(clip=input, format=rgb_fmt, matrix_in_s="709")
-		infer = vsmlrt.inference(clips=clip, network_path=mdl_pth, backend=be_param)
+		infer_clips = GEN_TCLIPS(input=clip, num_frames=num_frames)
+		infer = vsmlrt.inference(clips=infer_clips, network_path=mdl_pth, backend=be_param)
 		if crc :
 			infer = DCF(input=infer, ref=clip)
 		output = core.resize.Bilinear(clip=infer, format=fmt_in, matrix_s="709", range=1 if colorlv==0 else None)
